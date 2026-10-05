@@ -97,7 +97,7 @@ export default () => {
 
     // 使用 useLogStream 处理实时日志流
     useLogStream({
-        clusterName: cluster || 'Cluster_1',
+        clusterName: cluster || '',
         levelName: currentLevelName,
         onLog: (line) => {
             const currentLogs = editorRef?.current?.current?.getValue() || ""

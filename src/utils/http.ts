@@ -33,14 +33,19 @@ http.interceptors.response.use(
                 message.error(i18next.t('error.serverException'));
             }
             if (status === 401) {
-                message.warning(i18next.t('error.loginExpired'));
+                if (window.location.hash !== '#/login') {
+                    message.warning(i18next.t('error.loginExpired'));
+                }
             }
 
-            // 清除本地登录信息
-            localStorage.clear();
+            // 清除本地登录信息，但保留记住的密码凭证(remembered-credentials)、主题与语言设置
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
 
             // 跳转到登录页
-            window.location.href = '/#/login';
+            if (window.location.hash !== '#/login') {
+                window.location.href = '/#/login';
+            }
         }
 
         return Promise.reject(error);

@@ -45,18 +45,28 @@ const StyledContent = {
     alignItems: 'center'
 }
 
-// Base64 编码函数
+// Base64 编码函数 (支持中文等非 ASCII 字符)
 const encodeCredentials = (credentials: RememberedCredentials): string => {
-    return btoa(JSON.stringify(credentials));
+    try {
+        const jsonStr = JSON.stringify(credentials);
+        return btoa(encodeURIComponent(jsonStr).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))));
+    } catch {
+        return btoa(unescape(encodeURIComponent(JSON.stringify(credentials))));
+    }
 }
 
-// Base64 解码函数
+// Base64 解码函数 (支持中文等非 ASCII 字符)
 const decodeCredentials = (encoded: string): RememberedCredentials | null => {
     try {
-        return JSON.parse(atob(encoded));
-    } catch (error) {
-        console.error('Failed to decode credentials:', error);
-        return null;
+        const decoded = decodeURIComponent(Array.prototype.map.call(atob(encoded), (c: string) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+        return JSON.parse(decoded);
+    } catch {
+        try {
+            return JSON.parse(atob(encoded));
+        } catch (error) {
+            console.error('Failed to decode credentials:', error);
+            return null;
+        }
     }
 }
 
