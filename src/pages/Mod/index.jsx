@@ -126,8 +126,11 @@ export default () => {
             if (workshopMap.has(modid)) {
                 mod.enable = true
                 mod.installed = true
-                visibleModList.push(mod)
+            } else {
+                mod.enable = false
+                mod.installed = true
             }
+            visibleModList.push(mod)
         });
 
         // 一次性获取所有模组的偏好配置

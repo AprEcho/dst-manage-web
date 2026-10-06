@@ -5,7 +5,7 @@ import {useNavigate, useParams} from "react-router-dom";
 import {useTranslation} from "react-i18next";
 import {format} from "lua-json";
 
-import {updateModinfosApi, getMyModInfoList} from '../../../api/modApi.jsx';
+import {updateModinfosApi, getMyModInfoList, deleteModInfo} from '../../../api/modApi.jsx';
 import ModItem from "./ModItem/index.jsx";
 import ModConfigOptions from "../ModConfigOptions/index.jsx";
 import {useLevelsStore} from "../../../store/useLevelsStore";
@@ -198,10 +198,15 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
             return item
         })
         return updateLevelsApi({levels: newLevels})
-            .then(resp => {
+            .then(async resp => {
                 if (resp.code === 200) {
                     defaultConfigOptionsRef.current.delete(modId)
                     delete modConfigOptionsRef.current[modId]
+                    try {
+                        await deleteModInfo(cluster, modId)
+                    } catch (e) {
+                        console.error("deleteModInfo error:", e)
+                    }
                     modListRef.current = newModList
                     setModList([...newModList])
                     setMod(current => current?.modid === modId ? (newModList[0] || {}) : current)
