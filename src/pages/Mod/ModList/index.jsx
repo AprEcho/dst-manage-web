@@ -5,7 +5,7 @@ import {useNavigate, useParams} from "react-router-dom";
 import {useTranslation} from "react-i18next";
 import {format} from "lua-json";
 
-import {updateModinfosApi} from '../../../api/modApi.jsx';
+import {updateModinfosApi, getMyModInfoList} from '../../../api/modApi.jsx';
 import ModItem from "./ModItem/index.jsx";
 import ModConfigOptions from "../ModConfigOptions/index.jsx";
 import {useLevelsStore} from "../../../store/useLevelsStore";
@@ -159,13 +159,27 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
 
     function updateModConfigOptions() {
         setConfirmLoading(true)
-        updateModinfosApi(lang)
+        const hideLoading = message.loading(t('mod.updating', '正在通过 SteamCMD 检测并批量更新模组，耗时通常为 1~2 分钟，请稍候...'), 0)
+        updateModinfosApi(lang, cluster)
             .then(data => {
                 if (data.code === 200) {
-                    message.success(t('mod.update.ok'))
+                    message.success(data.msg || t('mod.update.ok'))
+                    getMyModInfoList(cluster).then(resp => {
+                        if (resp?.code === 200 && Array.isArray(resp?.data)) {
+                            modListRef.current = resp.data
+                            setModList([...resp.data])
+                        }
+                    })
                 } else {
-                    message.warning(t('mod.update.error'))
+                    message.warning(data.msg || t('mod.update.error'))
                 }
+            })
+            .catch(error => {
+                console.error(error)
+                message.error(error?.message || t('mod.update.error'))
+            })
+            .finally(() => {
+                hideLoading()
                 setConfirmLoading(false)
             })
     }

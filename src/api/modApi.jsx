@@ -54,12 +54,15 @@ async function deleteStepupWorkshopApi(cluster) {
     })
     return response.data
 }
-async function updateModinfosApi(lang) {
-    if (lang.includes('zh')) {
+async function updateModinfosApi(lang, cluster) {
+    if (lang && lang.includes('zh')) {
         lang = 'zh'
     }
     const url = `/api/mod/modinfo?lang=${lang}`
-    const response = await http.put(url)
+    const response = await http.put(url, null, {
+        timeout: 1000 * 60 * 10,
+        headers: cluster ? { 'Cluster': cluster } : {},
+    })
     return response.data
 }
 
