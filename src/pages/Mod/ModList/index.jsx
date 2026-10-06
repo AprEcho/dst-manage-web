@@ -48,16 +48,32 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
 
     function formatModOverride(targetModList = modList) {
         try {
-            const chooses = targetModList.filter(mod => mod.enable)
-            const modids = chooses.map(mod => mod.modid)
+            // 所有在 targetModList 中的模组都写入 modoverrides.lua
+            // 开关状态分别记录为 enabled = true / false
+            // 只有点击【删除】才会将模组从 targetModList 中剔除
+            const modids = targetModList.map(mod => mod.modid)
+            const enableMap = new Map()
+            targetModList.forEach(m => {
+                enableMap.set(m.modid, m.enable === true)
+            })
+
             const object = _.pick(modConfigOptionsRef.current, modids)
             const object1 = {}
             // eslint-disable-next-line no-restricted-syntax
             for (const id of modids) {
-                defaultConfigOptionsRef.current.get(id)
-                object1[id] = defaultConfigOptionsRef.current.get(id)
+                const defVal = defaultConfigOptionsRef.current?.get(id)
+                if (defVal) {
+                    object1[id] = defVal
+                }
             }
             const workshopObject = _.merge({}, object, object1)
+            // 确保 targetModList 里的所有模组在 workshopObject 中都有配置项对象
+            modids.forEach(id => {
+                if (!workshopObject[id]) {
+                    workshopObject[id] = {}
+                }
+            })
+
             const workshopIdKeys = Object.keys(workshopObject)
             const workShops = {}
             workshopIdKeys.forEach(workshopId => {
@@ -81,7 +97,7 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
                 }
                 workShops[workshop] = {
                     configuration_options: options,
-                    enabled: true
+                    enabled: enableMap.get(workshopId) === true
                 }
             })
             console.log("结果",workShops)
@@ -130,7 +146,7 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
             message.warning(t('level.fetch.error'))
             return
         }
-        const modoverrides = formatModOverride()
+        const modoverrides = formatModOverride(modListRef.current)
         const newLevels = levels.map(item=>{
             if (item.uuid === selectedLevelUuid) {
                 return {...item, modoverrides}

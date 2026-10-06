@@ -86,45 +86,25 @@ export default () => {
     }
 
     async function initModConfigList(modoverrides, subscribeModList, setModList, defaultConfigOptionsRef, modConfigOptionsRef) {
-        const workshopMap = parseModoverrides(modoverrides);
-        //console.log("workshopMap", workshopMap)
-
-        // subscribeModList.push({
-        //     mod_config: {
-        //         author: "kelei",
-        //         description: "禁用本地所有模组，tips: 这个只是个虚拟的模组，只是兼容了下。如果不知道是干什么用的请不要开启！！！ 不支持自定禁用某些模组 \n\n 请勿乱点！！！\n\n 如果要删除，对应模组配置里面的 client_mods_disabled = {\n" +
-        //             "    configuration_options = {},\n" +
-        //             "    enabled = true,\n" +
-        //             "  },",
-        //         name: "client_mods_disabled",
-        //         configuration_options: []
-        //     },
-        //     enable: false,
-        //     update: false,
-        //     modid: "client_mods_disabled",
-        //     installed: true,
-        //     name: "client_mods_disabled",
-        //     img: "https://steamuserimages-a.akamaihd.net/ugc/1829046490069435373/B2073D1E5B13DA00D29D316FC946C154C0854146/?imw=64&imh=64&ima=fit&impolicy=Letterbox&imcolor=%23000000&letterbox=true"
-        //
-        // })
+        const { workshopMap, enabledMap } = parseModoverrides(modoverrides);
         const modOptions = {}
         const visibleModList = []
         const subscribeModMap = new Map()
         subscribeModList.forEach(mod => {
             const {modid} = mod
             subscribeModMap.set(modid, mod)
-            const options = mod.mod_config.configuration_options
+            const options = mod?.mod_config?.configuration_options
             if (typeof options === 'object' && options !== undefined && options !== null) {
                 const defaultOptions = {}
                 options?.forEach((item) => {
-                    if (item.default !== '' && item.name !== "null" && item.name !== undefined) {
+                    if (item && item.default !== '' && item.name !== "null" && item.name !== undefined) {
                         defaultOptions[item.name] = item.default
                     }
                 })
                 modOptions[modid] = defaultOptions
             }
             if (workshopMap.has(modid)) {
-                mod.enable = true
+                mod.enable = enabledMap.get(modid) !== false
                 mod.installed = true
             } else {
                 mod.enable = false
@@ -156,7 +136,7 @@ export default () => {
             })
         }
 
-        // 如果当前世界的 modoverrides 中有未订阅/未安装的 mod，仍显示出来用于编辑或删除。
+        // 如果当前世界的 modoverrides 中有未在订阅列表中的 mod，仍显示出来用于编辑、开关或删除
         workshopMap.forEach((value, key) => {
             if (subscribeModMap.get(key) === undefined) {
                 console.log("not subscribe mod: ", key)
@@ -169,7 +149,7 @@ export default () => {
                     update: false,
                     modid: key,
                     installed: false,
-                    enable: true
+                    enable: enabledMap.get(key) !== false
                 })
             }
         });
@@ -195,13 +175,17 @@ export default () => {
             const result = parse(modoverrides);
             const keys = Object.keys(result)
             const workshopMap = new Map();
+            const enabledMap = new Map();
             keys.forEach(workshopId => {
-                workshopMap.set(workshopId.replace('workshop-', '').replace('"', '').replace('"', ''), {...result[workshopId].configuration_options})
+                const cleanId = workshopId.replace('workshop-', '').replace(/"/g, '')
+                const item = result[workshopId] || {}
+                workshopMap.set(cleanId, { ...(item.configuration_options || {}) })
+                enabledMap.set(cleanId, item.enabled !== false)
             })
-            console.log("modoverrides 解析对象", workshopMap)
-            return workshopMap
+            console.log("modoverrides 解析对象", workshopMap, enabledMap)
+            return { workshopMap, enabledMap }
         } catch (error) {
-            return new Map()
+            return { workshopMap: new Map(), enabledMap: new Map() }
         }
     }
 
