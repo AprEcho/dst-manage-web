@@ -11,6 +11,7 @@ import Workshop from "./Workshop/index.jsx";
 import UgcAcf from "./UgcAcf/index.jsx";
 import {useLevelsStore} from "../../store/useLevelsStore";
 import {useModPreferences} from "../../hooks/useModPreferences";
+import {normalizeModId} from "../../utils/dstUtils";
 
 
 export default () => {
@@ -40,18 +41,22 @@ export default () => {
                 message.warning(t('mod.fetch.error'))
                 return
             }
-            let modList = modInfoListResp.data
-            if (modList === null) {
-                modList = []
+            let fetchedList = modInfoListResp.data
+            if (fetchedList === null || !Array.isArray(fetchedList)) {
+                fetchedList = []
             }
-            setmodList([...modList])
-            setModDataList([...modList])
+            const normalizedList = fetchedList.map(item => ({
+                ...item,
+                modid: normalizeModId(item.modid)
+            }))
+            setmodList([...normalizedList])
+            setModDataList([...normalizedList])
             // modInfoListResp.data
             const loadedLevels = await reFlushLevels(cluster)
             const defaultLevel = findDefaultLevel(loadedLevels)
             if (defaultLevel) {
                 setSelectedLevelUuid(defaultLevel.uuid)
-                await initModConfigList(defaultLevel.modoverrides, modList, setmodList, defaultConfigOptionsRef, modConfigOptionsRef)
+                await initModConfigList(defaultLevel.modoverrides, normalizedList, setmodList, defaultConfigOptionsRef, modConfigOptionsRef)
             } else {
                 setmodList([])
             }
@@ -79,9 +84,18 @@ export default () => {
         }
         setSelectedLevelUuid(newLevel)
         const modoverrides = selectedLevel.modoverrides
-        const newModDataList = modDataList.map(a=>{
-            return {...a}
+        const currentModsMap = new Map()
+        modDataList.forEach(m => {
+            const id = normalizeModId(m.modid)
+            if (id) currentModsMap.set(id, { ...m, modid: id })
         })
+        modList.forEach(m => {
+            const id = normalizeModId(m.modid)
+            if (id && !currentModsMap.has(id)) {
+                currentModsMap.set(id, { ...m, modid: id })
+            }
+        })
+        const newModDataList = Array.from(currentModsMap.values())
         await initModConfigList(modoverrides, newModDataList, setmodList, defaultConfigOptionsRef, modConfigOptionsRef)
     }
 
@@ -91,8 +105,10 @@ export default () => {
         const visibleModList = []
         const subscribeModMap = new Map()
         subscribeModList.forEach(mod => {
-            const {modid} = mod
-            subscribeModMap.set(modid, mod)
+            const cleanId = normalizeModId(mod.modid)
+            if (!cleanId) return
+            mod.modid = cleanId
+            subscribeModMap.set(cleanId, mod)
             const options = mod?.mod_config?.configuration_options
             if (typeof options === 'object' && options !== undefined && options !== null) {
                 const defaultOptions = {}
@@ -101,10 +117,10 @@ export default () => {
                         defaultOptions[item.name] = item.default
                     }
                 })
-                modOptions[modid] = defaultOptions
+                modOptions[cleanId] = defaultOptions
             }
-            if (workshopMap.has(modid)) {
-                mod.enable = enabledMap.get(modid) !== false
+            if (workshopMap.has(cleanId)) {
+                mod.enable = enabledMap.get(cleanId) !== false
                 mod.installed = true
             } else {
                 mod.enable = false
@@ -119,18 +135,19 @@ export default () => {
         if (allPreferences) {
             // 遍历所有模组，仅对未启用的模组应用已保存的偏好配置
             subscribeModList.forEach((mod) => {
-                const {modid} = mod
+                const cleanId = normalizeModId(mod.modid)
+                if (!cleanId) return
 
                 // 只有模组未启用时，才应用保存的偏好配置
                 // 已启用的模组使用 workshopMap 中当前的配置（即实际生效的配置）
                 if (!mod.enable) {
-                    const defaultConfig = modOptions[modid] || {}
-                    const savedPreference = allPreferences[modid]
+                    const defaultConfig = modOptions[cleanId] || {}
+                    const savedPreference = allPreferences[cleanId]
 
                     if (savedPreference) {
                         // 智能合并：保留新增的配置项，同时应用已保存的偏好
-                        const mergedConfig = applyPreference(modid, defaultConfig, savedPreference)
-                        workshopMap.set(modid, mergedConfig)
+                        const mergedConfig = applyPreference(cleanId, defaultConfig, savedPreference)
+                        workshopMap.set(cleanId, mergedConfig)
                     }
                 }
             })
@@ -138,8 +155,9 @@ export default () => {
 
         // 如果当前世界的 modoverrides 中有未在订阅列表中的 mod，仍显示出来用于编辑、开关或删除
         workshopMap.forEach((value, key) => {
-            if (subscribeModMap.get(key) === undefined) {
-                console.log("not subscribe mod: ", key)
+            const cleanKey = normalizeModId(key)
+            if (cleanKey && !subscribeModMap.has(cleanKey)) {
+                console.log("not subscribe mod: ", cleanKey)
                 visibleModList.push({
                     mod_config: {
                         author: "unknown",
@@ -147,9 +165,9 @@ export default () => {
                     },
                     name: "",
                     update: false,
-                    modid: key,
+                    modid: cleanKey,
                     installed: false,
-                    enable: enabledMap.get(key) !== false
+                    enable: enabledMap.get(cleanKey) !== false
                 })
             }
         });
@@ -176,15 +194,18 @@ export default () => {
             const keys = Object.keys(result)
             const workshopMap = new Map();
             const enabledMap = new Map();
-            keys.forEach(workshopId => {
-                const cleanId = workshopId.replace('workshop-', '').replace(/"/g, '')
-                const item = result[workshopId] || {}
-                workshopMap.set(cleanId, { ...(item.configuration_options || {}) })
+            keys.forEach(rawKey => {
+                const cleanId = normalizeModId(rawKey)
+                if (!cleanId) return
+                const item = result[rawKey] || {}
+                const options = Array.isArray(item.configuration_options) ? {} : { ...(item.configuration_options || {}) }
+                workshopMap.set(cleanId, options)
                 enabledMap.set(cleanId, item.enabled !== false)
             })
             console.log("modoverrides 解析对象", workshopMap, enabledMap)
             return { workshopMap, enabledMap }
         } catch (error) {
+            console.error("parseModoverrides error:", error)
             return { workshopMap: new Map(), enabledMap: new Map() }
         }
     }

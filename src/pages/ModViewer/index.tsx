@@ -4,6 +4,8 @@ import {useTranslation} from "react-i18next";
 import {getMyModInfoList} from "../../api/modApi.ts";
 import {parse} from "lua-json";
 import {useParams} from "react-router-dom";
+// @ts-ignore
+import {normalizeModId} from "../../utils/dstUtils";
 
 export interface ModInfo {
     auth?: string;
@@ -92,7 +94,7 @@ const ModItem2: React.FC<{ modInfo: ModInfo, valueRef: RefObject<string> }> = ({
                         <div style={{float: "right"}}>
                             <div style={{paddingBottom: 8}}>
                                 <Switch checkedChildren={t('switch.open')} unCheckedChildren={t('switch.close')}
-                                        defaultValue={modoverridesMap?.has(modInfo.modid) && modoverridesMap?.get(modInfo.modid)?.__enabled !== false}/>
+                                        defaultValue={modoverridesMap?.has(normalizeModId(modInfo.modid)) && modoverridesMap?.get(normalizeModId(modInfo.modid))?.__enabled !== false}/>
                             </div>
                             <Button type="link" onClick={() => setOpen1(true)}>{t('modViewer.configure')}</Button>
                         </div>
@@ -120,12 +122,13 @@ function parseModoverrides(modoverrides: string) {
         const keys = Object.keys(result)
         const workshopMap = new Map();
         keys.forEach(workshopId => {
+            const cleanId = normalizeModId(workshopId)
+            if (!cleanId) return
             const item = result[workshopId] || {}
-            const options = { ...(item.configuration_options || {}) }
+            const options = Array.isArray(item.configuration_options) ? {} : { ...(item.configuration_options || {}) }
             // @ts-ignore
             options.__enabled = item.enabled !== false
-            // @ts-ignore
-            workshopMap.set(workshopId.replace('workshop-', '').replace(/"/g, ''), options)
+            workshopMap.set(cleanId, options)
         })
         return workshopMap
     } catch (error) {
@@ -269,7 +272,8 @@ const ModViewer: React.FC<{ valueRef: RefObject<string> }> = ({valueRef}) => {
     function sort(modList: ModInfo[], modoverrides: string) {
         const map = parseModoverrides(modoverrides);
         modList.forEach(mod => {
-            mod.enable = !!map?.has(mod.modid) && map?.get(mod.modid)?.__enabled !== false;
+            const cleanId = normalizeModId(mod.modid);
+            mod.enable = !!map?.has(cleanId) && map?.get(cleanId)?.__enabled !== false;
         })
         modList.sort((a, b) => {
             if (a.enable === b.enable) {

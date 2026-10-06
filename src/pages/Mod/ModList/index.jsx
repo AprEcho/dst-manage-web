@@ -12,6 +12,7 @@ import {useLevelsStore} from "../../../store/useLevelsStore";
 import {updateLevelsApi} from "../../../api/clusterLevelApi.jsx";
 import i18n from "i18next";
 import {useUserPreferences} from "../../../hooks/useUserPreferences.ts";
+import {normalizeModId} from "../../../utils/dstUtils";
 
 // eslint-disable-next-line react/prop-types
 export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRef, changeLevel, selectedLevelUuid}) => {
@@ -36,9 +37,11 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
     }
 
     const changeEnable = (modId) => {
+        const cleanTargetId = normalizeModId(modId);
         const newModList = modList.map(mod =>
-            mod.modid === modId ? { ...mod, enable: !mod.enable } : mod
+            normalizeModId(mod.modid) === cleanTargetId ? { ...mod, enable: !mod.enable } : mod
         );
+        modListRef.current = newModList;
         setModList(newModList);
     };
 
@@ -51,10 +54,14 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
             // 所有在 targetModList 中的模组都写入 modoverrides.lua
             // 开关状态分别记录为 enabled = true / false
             // 只有点击【删除】才会将模组从 targetModList 中剔除
-            const modids = targetModList.map(mod => mod.modid)
             const enableMap = new Map()
+            const modids = []
             targetModList.forEach(m => {
-                enableMap.set(m.modid, m.enable === true)
+                const cleanId = normalizeModId(m.modid)
+                if (cleanId) {
+                    modids.push(cleanId)
+                    enableMap.set(cleanId, m.enable === true)
+                }
             })
 
             const object = _.pick(modConfigOptionsRef.current, modids)
@@ -76,20 +83,20 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
 
             const workshopIdKeys = Object.keys(workshopObject)
             const workShops = {}
-            workshopIdKeys.forEach(workshopId => {
-                if (workshopObject[workshopId] === undefined) {
-                    workshopObject[workshopId] = {}
-                }
+            workshopIdKeys.forEach(rawKey => {
+                const cleanId = normalizeModId(rawKey)
+                if (!cleanId) return
+
                 let workshop
-                if (isWorkshopId(workshopId)) {
-                    workshop = `workshop-${workshopId}`
+                if (isWorkshopId(cleanId)) {
+                    workshop = `workshop-${cleanId}`
                 } else {
-                    workshop = workshopId
+                    workshop = cleanId
                 }
-                const options = workshopObject[workshopId]
+                const options = workshopObject[rawKey] || {}
                 delete options.null
-                if (options !== undefined || options !== null) {
-                    Object.keys(options).map(k=>{
+                if (options !== undefined && options !== null) {
+                    Object.keys(options).forEach(k => {
                         if (options[k] === null || options[k] === undefined) {
                             delete options[k]
                         }
@@ -97,10 +104,10 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
                 }
                 workShops[workshop] = {
                     configuration_options: options,
-                    enabled: enableMap.get(workshopId) === true
+                    enabled: enableMap.get(cleanId) === true
                 }
             })
-            console.log("结果",workShops)
+            console.log("结果", workShops)
             return format(workShops, {
                 singleQuote: false
             })
@@ -112,7 +119,8 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
     }
 
     function saveModConfig() {
-        const modoverrides = formatModOverride(modListRef.current)
+        const currentList = modListRef.current?.length > 0 ? modListRef.current : modList
+        const modoverrides = formatModOverride(currentList)
         if (modoverrides === "return { error }") {
             message.warning(t('mod.parse.error'))
             return Promise.resolve(false)
@@ -146,7 +154,8 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
             message.warning(t('level.fetch.error'))
             return
         }
-        const modoverrides = formatModOverride(modListRef.current)
+        const currentList = modListRef.current?.length > 0 ? modListRef.current : modList
+        const modoverrides = formatModOverride(currentList)
         const newLevels = levels.map(item=>{
             if (item.uuid === selectedLevelUuid) {
                 return {...item, modoverrides}
@@ -158,9 +167,6 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
                 if (resp.code === 200) {
                     message.success(t('level.save.success'))
                     reFlushLevels(cluster)
-                        .then(resp=>{
-
-                        })
                 } else {
                     message.warning(t('level.save.error'))
                     message.warning(resp.msg)
@@ -201,7 +207,8 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
     }
 
     const removeMod = (modId) => {
-        const newModList = modList.filter(mod => mod.modid !== modId)
+        const cleanTargetId = normalizeModId(modId)
+        const newModList = modList.filter(mod => normalizeModId(mod.modid) !== cleanTargetId)
         const modoverrides = formatModOverride(newModList)
         if (modoverrides === "return { error }") {
             message.warning(t('mod.parse.error'))
@@ -216,7 +223,9 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
         return updateLevelsApi({levels: newLevels})
             .then(async resp => {
                 if (resp.code === 200) {
-                    defaultConfigOptionsRef.current.delete(modId)
+                    defaultConfigOptionsRef.current?.delete(cleanTargetId)
+                    defaultConfigOptionsRef.current?.delete(modId)
+                    delete modConfigOptionsRef.current[cleanTargetId]
                     delete modConfigOptionsRef.current[modId]
                     try {
                         await deleteModInfo(cluster, modId)
@@ -225,7 +234,7 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
                     }
                     modListRef.current = newModList
                     setModList([...newModList])
-                    setMod(current => current?.modid === modId ? (newModList[0] || {}) : current)
+                    setMod(current => normalizeModId(current?.modid) === cleanTargetId ? (newModList[0] || {}) : current)
                     message.success(t('mod.delete.ok'))
                     reFlushLevels(cluster)
                     return true
@@ -243,11 +252,12 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
     }
 
     useEffect(() => {
-        // 去重：根据 modid 去重，保留第一个
+        // 去重：根据 normalizeModId(modid) 去重，保留第一个
         const uniqueModList = modList.reduce((acc, current) => {
-            const existingMod = acc.find(item => item.modid === current.modid);
+            const cleanId = normalizeModId(current.modid);
+            const existingMod = acc.find(item => normalizeModId(item.modid) === cleanId);
             if (!existingMod) {
-                acc.push(current);
+                acc.push({ ...current, modid: cleanId });
             }
             return acc;
         }, []);
@@ -260,7 +270,7 @@ export default ({modList, setModList,defaultConfigOptionsRef, modConfigOptionsRe
         }
 
         modListRef.current = uniqueModList
-        setMod(current => uniqueModList.find(item => item.modid === current?.modid) || uniqueModList[0] || {})
+        setMod(current => uniqueModList.find(item => normalizeModId(item.modid) === normalizeModId(current?.modid)) || uniqueModList[0] || {})
     }, [modList, setModList])
 
     useEffect(() => {

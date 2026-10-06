@@ -322,4 +322,10 @@ export {
     luaTableToJsObject2,
 
     beautifyLua,
+    normalizeModId,
+}
+
+function normalizeModId(id) {
+    if (id === null || id === undefined) return '';
+    return String(id).trim().replace(/^[\["'\s]+|[\]"'\s]+$/g, '').replace(/^workshop-/, '');
 }
